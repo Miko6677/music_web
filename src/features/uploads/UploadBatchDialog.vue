@@ -164,6 +164,120 @@ const emit = defineEmits<{
         <p v-if="!album.selection && album.matches.length" class="notice">
           存在多张候选或发行资料不同，请核对后选择。
         </p>
+        <details v-if="album.selection !== 'none'" class="batch-details musicbrainz-import">
+          <summary>从 MusicBrainz 获取专辑资料</summary>
+          <div class="form-stack">
+            <p class="hint">
+              搜索公开发行资料，预览后再填入本组。仅在曲名或曲序能唯一对应时更新曲目；其余保留原值。
+            </p>
+            <div class="form-grid">
+              <label
+                >专辑搜索词<input
+                  v-model="album.musicBrainzQuery"
+                  maxlength="255"
+                  placeholder="专辑名称"
+              /></label>
+              <label
+                >歌手筛选<input v-model="album.artist_name" maxlength="255" placeholder="可留空"
+              /></label>
+            </div>
+            <div class="button-group">
+              <button
+                class="button small secondary"
+                type="button"
+                :disabled="
+                  batch.busy ||
+                  album.musicBrainzLoading ||
+                  (!album.musicBrainzQuery.trim() && !album.name.trim())
+                "
+                @click="batch.searchMusicBrainz(album)"
+              >
+                {{ album.musicBrainzLoading ? '正在查询…' : '搜索发行版本' }}
+              </button>
+              <span class="hint">搜索受服务器限流；短时间重复查询会复用缓存。</span>
+            </div>
+            <p v-if="album.musicBrainzError" class="error-text" role="alert">
+              {{ album.musicBrainzError }}
+            </p>
+            <div v-if="album.musicBrainzResults.length" class="picker-results">
+              <button
+                v-for="release in album.musicBrainzResults"
+                :key="release.id"
+                :class="{ selected: album.musicBrainzPreview?.id === release.id }"
+                :disabled="batch.busy || album.musicBrainzLoading"
+                type="button"
+                @click="batch.selectMusicBrainz(album, release)"
+              >
+                <strong>{{ release.title }}</strong>
+                <small>
+                  {{ release.artist_name || '未知歌手' }} · {{ release.date || '日期未知' }}
+                  {{ release.country ? `· ${release.country}` : '' }}
+                  {{ release.track_count ? `· ${release.track_count} 首` : '' }} ·
+                  {{ release.status || '发行状态未知' }}
+                </small>
+              </button>
+            </div>
+            <article v-if="album.musicBrainzPreview" class="musicbrainz-preview">
+              <img
+                v-if="album.musicBrainzPreview.cover_preview_url"
+                :src="album.musicBrainzPreview.cover_preview_url"
+                :alt="`${album.musicBrainzPreview.title} 封面预览`"
+                loading="lazy"
+              />
+              <div class="musicbrainz-preview-content">
+                <strong>{{ album.musicBrainzPreview.title }}</strong>
+                <p class="hint">
+                  {{ album.musicBrainzPreview.artist_name || '未知歌手' }} ·
+                  {{ album.musicBrainzPreview.date || '日期未知' }}
+                  {{
+                    album.musicBrainzPreview.release_country
+                      ? `· ${album.musicBrainzPreview.release_country}`
+                      : ''
+                  }}
+                  · {{ album.musicBrainzPreview.total_tracks || 0 }} 首 /
+                  {{ album.musicBrainzPreview.total_discs || 0 }} 碟
+                </p>
+                <ol v-if="album.musicBrainzPreview.tracks.length" class="musicbrainz-tracklist">
+                  <li
+                    v-for="track in album.musicBrainzPreview.tracks"
+                    :key="`${track.disc}-${track.track}`"
+                  >
+                    <span>{{ track.disc }}-{{ track.track }}. {{ track.title }}</span>
+                    <small v-if="track.artist_name">{{ track.artist_name }}</small>
+                  </li>
+                </ol>
+                <p v-else class="hint">来源未提供曲目列表，现有曲目信息会保留。</p>
+                <div class="button-group">
+                  <button
+                    class="button small secondary"
+                    type="button"
+                    :disabled="batch.busy || album.musicBrainzLoading"
+                    @click="batch.applyMusicBrainz(album)"
+                  >
+                    应用发行资料
+                  </button>
+                  <button
+                    v-if="album.musicBrainzPreview.cover_preview_url"
+                    class="button small secondary"
+                    type="button"
+                    :disabled="batch.busy || album.musicBrainzCoverLoading"
+                    @click="batch.importMusicBrainzCover(album)"
+                  >
+                    {{ album.musicBrainzCoverLoading ? '正在导入封面…' : '导入并选中封面' }}
+                  </button>
+                </div>
+              </div>
+            </article>
+            <p class="hint">
+              资料来源：<a href="https://musicbrainz.org/" target="_blank" rel="noreferrer"
+                >MusicBrainz</a
+              >；封面来自
+              <a href="https://coverartarchive.org/" target="_blank" rel="noreferrer"
+                >Cover Art Archive</a
+              >。 封面导入到你的图片库前，请确认具备相应使用权限；已有专辑封面不会自动替换。
+            </p>
+          </div>
+        </details>
         <ul v-if="batch.selectedAlbum(album)?.conflicts.length" class="preview-warnings">
           <li v-for="conflict in batch.selectedAlbum(album)?.conflicts" :key="conflict">
             {{ conflict }}
@@ -672,6 +786,45 @@ const emit = defineEmits<{
 .batch-details[open] > summary {
   margin-bottom: 14px;
 }
+.musicbrainz-import {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface, white);
+}
+.musicbrainz-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.musicbrainz-preview > img {
+  width: 92px;
+  height: 92px;
+  flex: 0 0 92px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--soft);
+}
+.musicbrainz-preview-content {
+  min-width: 0;
+  flex: 1;
+}
+.musicbrainz-tracklist {
+  max-height: 180px;
+  overflow-y: auto;
+  padding-left: 22px;
+  font-size: 12px;
+}
+.musicbrainz-tracklist li {
+  padding: 2px 0;
+}
+.musicbrainz-tracklist small {
+  display: block;
+  color: var(--muted);
+}
 .group-performer {
   display: grid;
   gap: 8px;
@@ -831,6 +984,9 @@ const emit = defineEmits<{
   }
   .batch-file {
     padding: 12px;
+  }
+  .musicbrainz-preview {
+    flex-direction: column;
   }
 }
 </style>

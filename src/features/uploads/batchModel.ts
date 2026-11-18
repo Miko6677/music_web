@@ -2,6 +2,7 @@ import { createUuid } from '@/utils/uuid'
 import type { AlbumDraft, AlbumMatch } from '@/types/catalog'
 import type { UploadPreview } from '@/types/uploads'
 import type { UploadTask } from './model'
+import type { MusicBrainzRelease, MusicBrainzReleaseSummary } from './musicBrainz'
 
 export type BatchGrouping = 'folder' | 'album'
 
@@ -34,6 +35,12 @@ export interface BatchAlbum extends AlbumDraft {
   includeArtwork: boolean
   excludedPictureIds: string[]
   replaceCover: boolean
+  musicBrainzQuery: string
+  musicBrainzResults: MusicBrainzReleaseSummary[]
+  musicBrainzPreview: MusicBrainzRelease | null
+  musicBrainzLoading: boolean
+  musicBrainzCoverLoading: boolean
+  musicBrainzError: string
 }
 export interface BatchEntry {
   row: BatchRow
@@ -128,6 +135,12 @@ export function createBatchAlbum(tasks: UploadTask[] = []): BatchAlbum {
     excludedPictureIds: first?.organizeDraft?.excludedPictureIds || [],
     replaceCover:
       first?.organizeDraft?.replaceCover ?? assignment?.album_supplement?.replace_cover ?? false,
+    musicBrainzQuery: saved?.name || first?.album || '',
+    musicBrainzResults: [],
+    musicBrainzPreview: null,
+    musicBrainzLoading: false,
+    musicBrainzCoverLoading: false,
+    musicBrainzError: '',
     coverChoice:
       first?.organizeDraft?.coverChoice ??
       saved?.cover_id ??

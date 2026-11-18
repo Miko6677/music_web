@@ -19,6 +19,7 @@ import {
   createBatchAlbum,
   selectedBatchAlbum as selectedAlbum,
 } from './batchModel'
+import type { MusicBrainzRelease, MusicBrainzReleaseSummary } from './musicBrainz'
 
 export function useUploadBatch(onSaved: () => Promise<void>) {
   const libraries = useLibrariesStore()
@@ -602,6 +603,137 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
       pickPicture(album, image)
     })
   }
+  async function searchMusicBrainz(album: BatchAlbum) {
+    const query = album.musicBrainzQuery.trim() || album.name.trim()
+    if (!query) {
+      album.musicBrainzError = '请先输入专辑名称。'
+      return
+    }
+    album.musicBrainzLoading = true
+    album.musicBrainzError = ''
+    album.musicBrainzPreview = null
+    try {
+      const response = await api
+        .get('metadata/musicbrainz/releases/search', {
+          searchParams: { q: query, artist: album.artist_name.trim() },
+        })
+        .json<{ items: MusicBrainzReleaseSummary[] }>()
+      album.musicBrainzResults = response.items
+      if (!response.items.length)
+        album.musicBrainzError = '没有找到发行版本，请调整名称或歌手后重试。'
+    } catch (error) {
+      album.musicBrainzError = error instanceof Error ? error.message : '暂时无法搜索 MusicBrainz。'
+    } finally {
+      album.musicBrainzLoading = false
+    }
+  }
+  async function selectMusicBrainz(album: BatchAlbum, release: MusicBrainzReleaseSummary) {
+    album.musicBrainzLoading = true
+    album.musicBrainzError = ''
+    album.musicBrainzPreview = null
+    try {
+      const response = await api
+        .get(`metadata/musicbrainz/releases/${release.id}`)
+        .json<{ item: MusicBrainzRelease }>()
+      album.musicBrainzPreview = response.item
+    } catch (error) {
+      album.musicBrainzError = error instanceof Error ? error.message : '无法读取这份发行资料。'
+    } finally {
+      album.musicBrainzLoading = false
+    }
+  }
+  async function applyMusicBrainz(album: BatchAlbum) {
+    const release = album.musicBrainzPreview
+    if (!release) return
+    album.name = release.title
+    album.artist_name = release.artist_name
+    album.release_year = release.release_year
+    album.release_country = release.release_country
+    album.label = release.label
+    album.catalog_number = release.catalog_number
+    album.musicbrainz_id = release.id
+    album.total_discs = release.total_discs
+    album.total_tracks = release.total_tracks
+    album.musicBrainzQuery = release.title
+
+    const normalize = (value: string) =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]/gu, '')
+    const members = groupEntries(album)
+    const tracks = release.tracks
+    const titleCounts = new Map<string, number>()
+    const rowTitleCounts = new Map<string, number>()
+    const positionCounts = new Map<string, number>()
+    const byTitle = new Map<string, (typeof tracks)[number]>()
+    const byPosition = new Map<string, (typeof tracks)[number]>()
+    for (const track of tracks) {
+      const key = normalize(track.title)
+      titleCounts.set(key, (titleCounts.get(key) || 0) + 1)
+      byTitle.set(key, track)
+      byPosition.set(`${track.disc}:${track.track}`, track)
+    }
+    for (const { row } of members) {
+      const key = normalize(row.title)
+      rowTitleCounts.set(key, (rowTitleCounts.get(key) || 0) + 1)
+      const position = `${row.disc}:${row.track}`
+      positionCounts.set(position, (positionCounts.get(position) || 0) + 1)
+    }
+    const positionsReliable =
+      members.length > 0 &&
+      members.every(({ row }) => {
+        const position = `${row.disc}:${row.track}`
+        return positionCounts.get(position) === 1 && byPosition.has(position)
+      })
+    let matchedTracks = 0
+    for (const { row } of members) {
+      const titleKey = normalize(row.title)
+      const titleMatch =
+        titleKey && titleCounts.get(titleKey) === 1 && rowTitleCounts.get(titleKey) === 1
+          ? byTitle.get(titleKey)
+          : undefined
+      const track =
+        titleMatch || (positionsReliable ? byPosition.get(`${row.disc}:${row.track}`) : undefined)
+      if (!track) continue
+      row.title = track.title
+      row.artist = track.artist_name || release.artist_name
+      row.disc = track.disc
+      row.track = track.track
+      matchedTracks++
+    }
+
+    if (album.selection === 'new') album.selection = ''
+    await searchAlbums(album, true)
+    notify(
+      matchedTracks
+        ? `已填入发行资料，并按唯一匹配更新 ${matchedTracks} 首曲目。`
+        : '已填入专辑资料；曲目没有可靠匹配，保留了原有歌名和曲序。',
+    )
+  }
+  async function importMusicBrainzCover(album: BatchAlbum) {
+    const release = album.musicBrainzPreview
+    if (!release?.cover_preview_url) {
+      notify('这份发行没有可用的正面封面。', true)
+      return
+    }
+    album.musicBrainzCoverLoading = true
+    try {
+      const blob = await api.get(`metadata/musicbrainz/releases/${release.id}/cover`).blob()
+      const mimeType = blob.type || 'image/jpeg'
+      const extension =
+        mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
+      const filename = release.title.replace(/[\\/:*?"<>|]/g, ' ').trim() || 'album-cover'
+      const file = new File([blob], `${filename}.${extension}`, { type: mimeType })
+      const image = await uploads.cover(file)
+      pickPicture(album, image)
+      notify('封面已导入并选中；入库前仍可更换或移除。')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '封面导入失败，请重试。', true)
+    } finally {
+      album.musicBrainzCoverLoading = false
+    }
+  }
   return {
     open,
     libraries,
@@ -651,6 +783,10 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
     choose,
     searchTracks,
     uploadCover,
+    searchMusicBrainz,
+    selectMusicBrainz,
+    applyMusicBrainz,
+    importMusicBrainzCover,
   }
 }
 

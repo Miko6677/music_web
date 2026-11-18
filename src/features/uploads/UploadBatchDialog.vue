@@ -329,6 +329,181 @@ const emit = defineEmits<{
             </p>
           </div>
         </details>
+        <details
+          v-if="album.selection !== 'none'"
+          class="batch-details musicbrainz-import public-album-import"
+        >
+          <summary>从 QQ 音乐、网易云音乐或酷狗公开专辑页获取资料</summary>
+          <div class="form-stack">
+            <p class="hint">
+              只读取无需登录的 HTTPS 专辑页可见资料、公开元数据和页面结构化数据；不调用平台
+              API、不登录、不绕过限制，也不下载音频。读不到或不完整时，可粘贴页面可见文字。只有本组已选本地音频会匹配/入库，其他曲目仅供核对。
+            </p>
+            <label
+              >公开专辑页链接<input
+                v-model="album.publicPageUrl"
+                :disabled="batch.busy || album.publicPageLoading"
+                maxlength="2048"
+                placeholder="粘贴 QQ 音乐、网易云音乐或酷狗的专辑详情/分享页链接"
+            /></label>
+            <div class="button-group">
+              <button
+                class="button small secondary"
+                type="button"
+                :disabled="batch.busy || album.publicPageLoading || !album.publicPageUrl.trim()"
+                @click="batch.previewPublicAlbum(album, 'url')"
+              >
+                {{ album.publicPageLoading ? '正在读取公开页面…' : '读取公开页面' }}
+              </button>
+              <button
+                class="text-button"
+                type="button"
+                :disabled="batch.busy || album.publicPageLoading"
+                @click="album.publicPageTextVisible = !album.publicPageTextVisible"
+              >
+                {{ album.publicPageTextVisible ? '收起文字粘贴区' : '页面打不开？粘贴页面文字' }}
+              </button>
+            </div>
+            <div v-if="album.publicPageTextVisible" class="form-stack">
+              <label
+                >粘贴页面可见的专辑资料和曲目清单<textarea
+                  v-model="album.publicPageText"
+                  :disabled="batch.busy || album.publicPageLoading"
+                  maxlength="50000"
+                  rows="7"
+                  placeholder="例如：专辑名、艺人、发行时间、唱片公司，以及按碟号/曲序排列的歌名"
+                />
+              </label>
+              <button
+                class="button small secondary"
+                type="button"
+                :disabled="batch.busy || album.publicPageLoading || !album.publicPageText.trim()"
+                @click="batch.previewPublicAlbum(album, 'text')"
+              >
+                {{ album.publicPageLoading ? '正在解析文字…' : '解析粘贴文字' }}
+              </button>
+            </div>
+            <p v-if="album.publicPageError" class="error-text" role="alert">
+              {{ album.publicPageError }}
+            </p>
+            <article
+              v-if="album.publicPagePreview"
+              class="musicbrainz-preview public-album-preview"
+            >
+              <img
+                v-if="album.publicPagePreview.cover_preview_url"
+                :src="album.publicPagePreview.cover_preview_url"
+                :alt="`${album.publicPagePreview.title || '专辑'}封面预览`"
+                loading="lazy"
+                referrerpolicy="no-referrer"
+              />
+              <div class="musicbrainz-preview-content">
+                <strong>{{ album.publicPagePreview.title || '来源未提供专辑名称' }}</strong>
+                <p class="hint">
+                  {{ album.publicPagePreview.source_platform }} ·
+                  {{ album.publicPagePreview.method === 'pasted-text' ? '粘贴文字' : '公开页面' }}
+                  <a
+                    v-if="album.publicPagePreview.source_url"
+                    :href="album.publicPagePreview.source_url"
+                    target="_blank"
+                    rel="noreferrer"
+                    >打开来源页</a
+                  >
+                </p>
+                <p class="hint">
+                  {{ album.publicPagePreview.artist_name || '艺人未提供' }} ·
+                  {{
+                    album.publicPagePreview.release_date ||
+                    album.publicPagePreview.release_year ||
+                    '发行日期未知'
+                  }}
+                  {{
+                    album.publicPagePreview.release_country
+                      ? `· ${album.publicPagePreview.release_country}`
+                      : ''
+                  }}
+                  ·
+                  {{
+                    album.publicPagePreview.total_tracks ||
+                    album.publicPagePreview.tracks.length ||
+                    '曲目数未知'
+                  }}
+                  首
+                  {{
+                    album.publicPagePreview.total_discs
+                      ? `· ${album.publicPagePreview.total_discs} 碟`
+                      : ''
+                  }}
+                </p>
+                <p class="hint">
+                  厂牌：{{ album.publicPagePreview.label || '未提供' }} · 编号：{{
+                    album.publicPagePreview.catalog_number || '未提供'
+                  }}
+                  · 流派：{{ album.publicPagePreview.genre || '未提供' }}
+                </p>
+                <p class="hint">
+                  条码：{{ album.publicPagePreview.barcode || '未提供' }} · 格式：{{
+                    album.publicPagePreview.formats.join(' / ') || '未提供'
+                  }}
+                </p>
+                <p v-if="album.publicPagePreview.description" class="hint public-album-description">
+                  简介（仅预览）：{{ album.publicPagePreview.description }}
+                </p>
+                <p v-if="album.publicPagePreview.warning" class="notice">
+                  {{ album.publicPagePreview.warning }}
+                </p>
+                <ol
+                  v-if="album.publicPagePreview.tracks.length"
+                  class="musicbrainz-tracklist public-album-tracklist"
+                >
+                  <li
+                    v-for="track in album.publicPagePreview.tracks"
+                    :key="`${track.disc}-${track.track}`"
+                  >
+                    <span>{{ track.disc }}-{{ track.track }}. {{ track.title }}</span>
+                    <small>
+                      {{ track.artist_name || album.publicPagePreview.artist_name || '艺人未提供' }}
+                      {{
+                        track.length_ms != null
+                          ? ` · ${Math.floor(track.length_ms / 60000)}:${String(Math.floor(track.length_ms / 1000) % 60).padStart(2, '0')}`
+                          : ''
+                      }}
+                    </small>
+                  </li>
+                </ol>
+                <p v-else class="hint">来源未提供曲目清单；不会据此为未选本地音频创建歌曲。</p>
+                <p v-if="album.publicPagePreview.cover_preview_url" class="hint">
+                  封面仅为网页预览，不会自动下载或替换。若有权使用，请自行选择本地图片上传。
+                </p>
+                <p
+                  v-if="
+                    album.publicPagePreview.barcode ||
+                    album.publicPagePreview.formats.length ||
+                    album.publicPagePreview.description
+                  "
+                  class="hint"
+                >
+                  条码、格式和简介当前仅供核对；EmoS 目录没有对应可写字段。国内平台页面 ID 不会写入
+                  MusicBrainz ID。
+                </p>
+                <div class="button-group">
+                  <button
+                    class="button small secondary"
+                    type="button"
+                    :disabled="
+                      batch.busy ||
+                      album.publicPageLoading ||
+                      (!album.publicPagePreview.title && !album.publicPagePreview.tracks.length)
+                    "
+                    @click="batch.applyPublicAlbumPage(album)"
+                  >
+                    应用可用资料并匹配本地音频
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </details>
         <ul v-if="batch.selectedAlbum(album)?.conflicts.length" class="preview-warnings">
           <li v-for="conflict in batch.selectedAlbum(album)?.conflicts" :key="conflict">
             {{ conflict }}
@@ -874,6 +1049,13 @@ const emit = defineEmits<{
 }
 .musicbrainz-tracklist li {
   padding: 2px 0;
+}
+.public-album-tracklist {
+  max-height: 280px;
+}
+.public-album-description {
+  max-height: 120px;
+  overflow-y: auto;
 }
 .musicbrainz-tracklist small {
   display: block;

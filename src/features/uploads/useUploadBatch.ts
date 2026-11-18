@@ -20,6 +20,7 @@ import {
   selectedBatchAlbum as selectedAlbum,
 } from './batchModel'
 import type { MusicBrainzRelease, MusicBrainzReleaseSummary } from './musicBrainz'
+import type { PublicAlbumPagePreview } from './publicAlbumPage'
 
 export function useUploadBatch(onSaved: () => Promise<void>) {
   const libraries = useLibrariesStore()
@@ -700,6 +701,115 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
       album.musicBrainzLoading = false
     }
   }
+  async function previewPublicAlbum(album: BatchAlbum, mode: 'url' | 'text') {
+    const url = album.publicPageUrl.trim()
+    const text = album.publicPageText.trim()
+    if (mode === 'url' && !url) {
+      album.publicPageError = '请先粘贴 QQ 音乐、网易云音乐或酷狗的专辑页链接。'
+      return
+    }
+    if (mode === 'text' && !text) {
+      album.publicPageError = '请粘贴专辑页上可见的资料和曲目文字。'
+      return
+    }
+
+    album.publicPageLoading = true
+    album.publicPageError = ''
+    album.publicPagePreview = null
+    try {
+      const response = await api
+        .post('metadata/public-album/preview', {
+          json: mode === 'url' ? { url } : { url: url || undefined, text },
+        })
+        .json<{ item: PublicAlbumPagePreview }>()
+      album.publicPagePreview = response.item
+      if (response.item.read_status === 'unreadable') album.publicPageTextVisible = true
+    } catch (error) {
+      album.publicPageError = error instanceof Error ? error.message : '暂时无法读取公开专辑资料。'
+      if (mode === 'url') album.publicPageTextVisible = true
+    } finally {
+      album.publicPageLoading = false
+    }
+  }
+  async function applyPublicAlbumPage(album: BatchAlbum) {
+    const release = album.publicPagePreview
+    if (!release || (!release.title.trim() && !release.tracks.length)) return
+
+    if (release.title.trim()) album.name = release.title
+    if (release.artist_name.trim()) album.artist_name = release.artist_name
+    if (release.release_year) album.release_year = release.release_year
+    if (release.release_date) album.release_date = release.release_date
+    if (release.genre) album.genre = release.genre
+    if (release.artist_credits.length) album.artist_credits = release.artist_credits
+    if (release.release_country) album.release_country = release.release_country
+    if (release.label) album.label = release.label
+    if (release.catalog_number) album.catalog_number = release.catalog_number
+    if (release.total_discs) album.total_discs = release.total_discs
+    if (release.total_tracks) album.total_tracks = release.total_tracks
+    album.musicBrainzQuery = album.name
+
+    const normalize = (value: string) =>
+      value
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]/gu, '')
+    const members = groupEntries(album)
+    const tracks = release.tracks
+    const titleCounts = new Map<string, number>()
+    const rowTitleCounts = new Map<string, number>()
+    const positionCounts = new Map<string, number>()
+    const byTitle = new Map<string, (typeof tracks)[number]>()
+    const byPosition = new Map<string, (typeof tracks)[number]>()
+    for (const track of tracks) {
+      const key = normalize(track.title)
+      titleCounts.set(key, (titleCounts.get(key) || 0) + 1)
+      byTitle.set(key, track)
+      byPosition.set(`${track.disc}:${track.track}`, track)
+    }
+    for (const { row } of members) {
+      const key = normalize(row.title)
+      rowTitleCounts.set(key, (rowTitleCounts.get(key) || 0) + 1)
+      const position = `${row.disc}:${row.track}`
+      positionCounts.set(position, (positionCounts.get(position) || 0) + 1)
+    }
+    const positionsReliable =
+      members.length > 0 &&
+      members.every(({ row }) => {
+        const position = `${row.disc}:${row.track}`
+        return positionCounts.get(position) === 1 && byPosition.has(position)
+      })
+    let matchedTracks = 0
+    const importedRows: { row: BatchRow; task: UploadTask }[] = []
+    for (const { row, task } of members) {
+      const titleKey = normalize(row.title)
+      const titleMatch =
+        titleKey && titleCounts.get(titleKey) === 1 && rowTitleCounts.get(titleKey) === 1
+          ? byTitle.get(titleKey)
+          : undefined
+      const track =
+        titleMatch || (positionsReliable ? byPosition.get(`${row.disc}:${row.track}`) : undefined)
+      if (!track) continue
+      row.title = track.title
+      row.artist = track.artist_name || release.artist_name || row.artist
+      row.musicbrainzId = null
+      row.artistCredits = track.artist_credits.length
+        ? track.artist_credits
+        : release.artist_credits
+      row.disc = track.disc
+      row.track = track.track
+      importedRows.push({ row, task })
+      matchedTracks++
+    }
+
+    if (album.selection === 'new') album.selection = ''
+    await Promise.all(importedRows.map(({ row, task }) => searchTracks(task, row)))
+    await searchAlbums(album, true)
+    notify(
+      matchedTracks
+        ? `已填入公开页面资料，并按唯一曲名或曲序更新 ${matchedTracks} 首已选音频。`
+        : '已填入可用的专辑资料；曲目没有可靠匹配，保留了本地音频原有歌名和曲序。',
+    )
+  }
   async function applyMusicBrainz(album: BatchAlbum) {
     const release = album.musicBrainzPreview
     if (!release) return
@@ -867,6 +977,8 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
     uploadCover,
     searchMusicBrainz,
     selectMusicBrainz,
+    previewPublicAlbum,
+    applyPublicAlbumPage,
     applyMusicBrainz,
     importMusicBrainzCover,
   }

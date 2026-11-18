@@ -8,7 +8,11 @@ Tracks are matched to the selected local audio by a unique title or reliable dis
 
 The optional **Import and select front cover** action copies a selected Cover Art Archive image into the existing image library only after an explicit rights confirmation. Importing does not automatically replace an existing album cover, and the normal review and publish confirmation remains required. Artwork may be copyrighted; import it only when you have the right to use it. Metadata and artwork source links are shown in the dialog.
 
-MusicBrainz is the authorized source currently supported by this feature. QQ Music, NetEase Cloud Music and Kugou are not queried unless official API access and use permissions are obtained; no unofficial scraping or audio downloading is used.
+## Import metadata from domestic platform pages
+
+In the same batch organizer, expand **Get data from a QQ Music, NetEase Cloud Music or Kugou public album page**. Paste an HTTPS album/share-page link and read the page, or expand the text area and paste the visible page text if the page is blocked, requires sign-in, is dynamically rendered, or has an incomplete track list. This reads only a user-supplied public page or user-supplied text; it does not use platform APIs, log in, bypass access controls, or download audio.
+
+Review the available album artist, release date/year, label, catalog number, genre, country, disc/track counts, description, barcode, formats, cover preview and complete track list before applying. Fields with no matching EmoS catalog column (currently description, barcode, formats and the remote cover URL) remain preview-only. Platform identifiers are never treated as MusicBrainz IDs. The existing library candidate search and manual publish confirmation remain in place. Tracks not matched to selected local audio are display-only and never create audio-less songs. Cover artwork is preview-only: if you have permission to use it, select a local cover file through the existing upload controls; no remote cover is automatically downloaded or substituted.
 
 ## Login
 

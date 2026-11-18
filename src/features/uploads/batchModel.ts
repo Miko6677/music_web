@@ -3,6 +3,7 @@ import type { AlbumDraft, AlbumMatch } from '@/types/catalog'
 import type { UploadPreview } from '@/types/uploads'
 import type { UploadTask } from './model'
 import type { MusicBrainzRelease, MusicBrainzReleaseSummary } from './musicBrainz'
+import type { PublicAlbumPagePreview } from './publicAlbumPage'
 
 export type BatchGrouping = 'folder' | 'album'
 
@@ -44,6 +45,12 @@ export interface BatchAlbum extends AlbumDraft {
   musicBrainzCoverLoading: boolean
   musicBrainzRightsConfirmed: boolean
   musicBrainzError: string
+  publicPageUrl: string
+  publicPageText: string
+  publicPageTextVisible: boolean
+  publicPagePreview: PublicAlbumPagePreview | null
+  publicPageLoading: boolean
+  publicPageError: string
 }
 export interface BatchEntry {
   row: BatchRow
@@ -156,6 +163,12 @@ export function createBatchAlbum(tasks: UploadTask[] = []): BatchAlbum {
     musicBrainzCoverLoading: false,
     musicBrainzRightsConfirmed: false,
     musicBrainzError: '',
+    publicPageUrl: '',
+    publicPageText: '',
+    publicPageTextVisible: false,
+    publicPagePreview: null,
+    publicPageLoading: false,
+    publicPageError: '',
     coverChoice:
       first?.organizeDraft?.coverChoice ??
       saved?.cover_id ??

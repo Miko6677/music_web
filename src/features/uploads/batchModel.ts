@@ -4,6 +4,7 @@ import type { UploadPreview } from '@/types/uploads'
 import type { UploadTask } from './model'
 import type { MusicBrainzRelease, MusicBrainzReleaseSummary } from './musicBrainz'
 import type { PublicAlbumPagePreview } from './publicAlbumPage'
+import { publicAlbumFields } from './publicAlbumPage'
 
 export type BatchGrouping = 'folder' | 'album'
 
@@ -51,6 +52,7 @@ export interface BatchAlbum extends AlbumDraft {
   publicPagePreview: PublicAlbumPagePreview | null
   publicPageLoading: boolean
   publicPageError: string
+  publicPageFields: string[]
 }
 export interface BatchEntry {
   row: BatchRow
@@ -169,6 +171,7 @@ export function createBatchAlbum(tasks: UploadTask[] = []): BatchAlbum {
     publicPagePreview: null,
     publicPageLoading: false,
     publicPageError: '',
+    publicPageFields: publicAlbumFields.map((field) => field.key),
     coverChoice:
       first?.organizeDraft?.coverChoice ??
       saved?.cover_id ??

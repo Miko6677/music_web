@@ -8,6 +8,7 @@ import { duration, qualities } from '@/utils/format'
 import type { UploadBatch } from './useUploadBatch'
 import type { BatchAlbum, BatchRow } from './batchModel'
 import type { UploadTask } from './model'
+import { publicAlbumFields } from './publicAlbumPage'
 
 const props = defineProps<{ batch: UploadBatch }>()
 const addingAlbum = ref(false)
@@ -495,11 +496,19 @@ const emit = defineEmits<{
                       album.publicPageLoading ||
                       (!album.publicPagePreview.title && !album.publicPagePreview.tracks.length)
                     "
+                    :aria-disabled="!album.publicPageFields.length"
                     @click="batch.applyPublicAlbumPage(album)"
                   >
-                    应用可用资料并匹配本地音频
+                    应用勾选资料并匹配本地音频
                   </button>
                 </div>
+                <fieldset :disabled="batch.busy || album.publicPageLoading" class="form-grid">
+                  <legend>选择要填入的字段（来源为空时保留原值）</legend>
+                  <label v-for="field in publicAlbumFields" :key="field.key" class="check-label">
+                    <input v-model="album.publicPageFields" type="checkbox" :value="field.key" />
+                    {{ field.label }}
+                  </label>
+                </fieldset>
               </div>
             </article>
           </div>

@@ -641,10 +641,12 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
       }))
       if (!row.matches.length) notify('没有找到对应歌曲，可以新建歌曲。')
       if (exactMatch) row.choice = `track:${exactMatch.id}`
-      if (!row.matches.some((match) => row.choice.endsWith(match.id))) {
+      if (
+        !row.matches.some(
+          (match) => row.choice === `track:${match.id}` || row.choice === `recording:${match.id}`,
+        )
+      )
         row.choice = ''
-        choose(task, row)
-      }
     } catch (error) {
       notify(error instanceof Error ? error.message : '查找曲目失败，请重试。', true)
     } finally {
@@ -735,17 +737,23 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
     const release = album.publicPagePreview
     if (!release || (!release.title.trim() && !release.tracks.length)) return
 
-    if (release.title.trim()) album.name = release.title
-    if (release.artist_name.trim()) album.artist_name = release.artist_name
-    if (release.release_year) album.release_year = release.release_year
-    if (release.release_date) album.release_date = release.release_date
-    if (release.genre) album.genre = release.genre
-    if (release.artist_credits.length) album.artist_credits = release.artist_credits
-    if (release.release_country) album.release_country = release.release_country
-    if (release.label) album.label = release.label
-    if (release.catalog_number) album.catalog_number = release.catalog_number
-    if (release.total_discs) album.total_discs = release.total_discs
-    if (release.total_tracks) album.total_tracks = release.total_tracks
+    const applies = (key: string) => album.publicPageFields.includes(key)
+    if (!album.publicPageFields.length) return
+    if (applies('title') && release.title.trim()) album.name = release.title
+    if (applies('artist') && release.artist_name.trim()) {
+      album.artist_name = release.artist_name
+      album.artist_credits = release.artist_credits
+    }
+    if (applies('year') && release.release_year) album.release_year = release.release_year
+    if (applies('date') && release.release_date) album.release_date = release.release_date
+    if (applies('genre') && release.genre) album.genre = release.genre
+    if (applies('country') && release.release_country)
+      album.release_country = release.release_country
+    if (applies('label') && release.label) album.label = release.label
+    if (applies('catalog') && release.catalog_number) album.catalog_number = release.catalog_number
+    album.musicbrainz_id = null
+    if (applies('discs') && release.total_discs) album.total_discs = release.total_discs
+    if (applies('count') && release.total_tracks) album.total_tracks = release.total_tracks
     album.musicBrainzQuery = album.name
 
     const normalize = (value: string) =>
@@ -758,13 +766,16 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
     const titleCounts = new Map<string, number>()
     const rowTitleCounts = new Map<string, number>()
     const positionCounts = new Map<string, number>()
+    const trackPositionCounts = new Map<string, number>()
     const byTitle = new Map<string, (typeof tracks)[number]>()
     const byPosition = new Map<string, (typeof tracks)[number]>()
     for (const track of tracks) {
       const key = normalize(track.title)
       titleCounts.set(key, (titleCounts.get(key) || 0) + 1)
       byTitle.set(key, track)
-      byPosition.set(`${track.disc}:${track.track}`, track)
+      const position = `${track.disc}:${track.track}`
+      byPosition.set(position, track)
+      trackPositionCounts.set(position, (trackPositionCounts.get(position) || 0) + 1)
     }
     for (const { row } of members) {
       const key = normalize(row.title)
@@ -776,11 +787,12 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
       members.length > 0 &&
       members.every(({ row }) => {
         const position = `${row.disc}:${row.track}`
-        return positionCounts.get(position) === 1 && byPosition.has(position)
+        return positionCounts.get(position) === 1 && trackPositionCounts.get(position) === 1
       })
     let matchedTracks = 0
     const importedRows: { row: BatchRow; task: UploadTask }[] = []
     for (const { row, task } of members) {
+      if (task.state === 'published') continue
       const titleKey = normalize(row.title)
       const titleMatch =
         titleKey && titleCounts.get(titleKey) === 1 && rowTitleCounts.get(titleKey) === 1
@@ -789,14 +801,23 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
       const track =
         titleMatch || (positionsReliable ? byPosition.get(`${row.disc}:${row.track}`) : undefined)
       if (!track) continue
-      row.title = track.title
-      row.artist = track.artist_name || release.artist_name || row.artist
-      row.musicbrainzId = null
-      row.artistCredits = track.artist_credits.length
-        ? track.artist_credits
-        : release.artist_credits
-      row.disc = track.disc
-      row.track = track.track
+      if (!['trackTitle', 'trackArtist', 'position'].some(applies)) continue
+      if (applies('trackTitle')) {
+        if (row.title !== track.title) row.musicbrainzId = null
+        row.title = track.title
+      }
+      if (applies('trackArtist')) {
+        const artist = track.artist_name || release.artist_name || row.artist
+        if (row.artist !== artist) row.musicbrainzId = null
+        row.artist = artist
+        row.artistCredits = track.artist_credits.length
+          ? track.artist_credits
+          : release.artist_credits
+      }
+      if (applies('position')) {
+        row.disc = track.disc
+        row.track = track.track
+      }
       importedRows.push({ row, task })
       matchedTracks++
     }

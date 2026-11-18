@@ -17,6 +17,8 @@ export interface BatchRow {
   choice: string
   matches: UploadPreview['matches']
   searching: boolean
+  musicbrainzId?: string | null
+  artistCredits?: import('./musicBrainz').MusicBrainzArtistCredit[]
 }
 export interface BatchAlbum extends AlbumDraft {
   key: string
@@ -40,6 +42,7 @@ export interface BatchAlbum extends AlbumDraft {
   musicBrainzPreview: MusicBrainzRelease | null
   musicBrainzLoading: boolean
   musicBrainzCoverLoading: boolean
+  musicBrainzRightsConfirmed: boolean
   musicBrainzError: string
 }
 export interface BatchEntry {
@@ -122,6 +125,17 @@ export function createBatchAlbum(tasks: UploadTask[] = []): BatchAlbum {
     artist_name:
       saved?.artist_name || uniqueArtists[0] || (performers.length === 1 ? performers[0]! : ''),
     release_year: saved?.release_year || first?.year || null,
+    release_date:
+      saved?.release_date ||
+      assignment?.album?.release_date ||
+      assignment?.album_supplement?.release_date ||
+      null,
+    genre: saved?.genre || assignment?.album?.genre || assignment?.album_supplement?.genre || '',
+    artist_credits:
+      saved?.artist_credits ||
+      assignment?.album?.artist_credits ||
+      assignment?.album_supplement?.artist_credits ||
+      [],
     edition: saved?.edition || '',
     release_country: saved?.release_country || first?.releaseCountry || '',
     label: saved?.label || first?.label || '',
@@ -140,6 +154,7 @@ export function createBatchAlbum(tasks: UploadTask[] = []): BatchAlbum {
     musicBrainzPreview: null,
     musicBrainzLoading: false,
     musicBrainzCoverLoading: false,
+    musicBrainzRightsConfirmed: false,
     musicBrainzError: '',
     coverChoice:
       first?.organizeDraft?.coverChoice ??

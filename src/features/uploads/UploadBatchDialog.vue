@@ -6,7 +6,7 @@ import EntityCover from '@/components/EntityCover.vue'
 import { fileUrl } from '@/utils/file'
 import { duration, qualities } from '@/utils/format'
 import type { UploadBatch } from './useUploadBatch'
-import type { BatchAlbum } from './batchModel'
+import type { BatchAlbum, BatchRow } from './batchModel'
 import type { UploadTask } from './model'
 
 const props = defineProps<{ batch: UploadBatch }>()
@@ -33,6 +33,11 @@ function confirmAlbumGroup() {
     addingAlbum.value = false
     albumName.value = ''
   }
+}
+function updateSongArtist(row: BatchRow, event: Event) {
+  if (!(event.target instanceof HTMLInputElement)) return
+  row.artist = event.target.value
+  props.batch.clearSongCredits(row)
 }
 watch(
   () => props.batch.open,
@@ -235,7 +240,42 @@ const emit = defineEmits<{
                       : ''
                   }}
                   · {{ album.musicBrainzPreview.total_tracks || 0 }} 首 /
-                  {{ album.musicBrainzPreview.total_discs || 0 }} 碟
+                  {{ album.musicBrainzPreview.total_discs || 0 }} 碟 ·
+                  {{ album.musicBrainzPreview.status || '状态未知' }}
+                </p>
+                <p class="hint">
+                  发行 MBID：{{ album.musicBrainzPreview.id }} · 厂牌：{{
+                    album.musicBrainzPreview.label || '未知'
+                  }}
+                  · 编号：{{ album.musicBrainzPreview.catalog_number || '未知' }} · 格式：{{
+                    album.musicBrainzPreview.formats?.join(' / ') || '未知'
+                  }}
+                  · 条码：{{ album.musicBrainzPreview.barcode || '未知' }} · 流派：{{
+                    album.musicBrainzPreview.genre || '未知'
+                  }}
+                </p>
+                <p class="hint">
+                  艺人署名：{{
+                    album.musicBrainzPreview.artist_credits
+                      ?.map((credit) => credit.credited_name + credit.joinphrase)
+                      .join('') || album.musicBrainzPreview.artist_name
+                  }}
+                </p>
+                <div v-if="album.musicBrainzPreview.artworks?.length" class="musicbrainz-artworks">
+                  <span v-for="art in album.musicBrainzPreview.artworks" :key="art.id"
+                    ><img
+                      v-if="art.preview_url"
+                      :src="art.preview_url"
+                      :alt="art.types.join(', ') || art.type"
+                      loading="lazy"
+                    /><small
+                      >{{ art.type }} · {{ art.types.join(', ') || '类型未知'
+                      }}{{ art.approved ? ' · 已审核' : '' }}</small
+                    ></span
+                  >
+                </div>
+                <p class="notice">
+                  完整发行曲目清单仅供比对；只有当前已选本地音频对应的歌曲会入库，不会为未选曲目创建歌曲。
                 </p>
                 <ol v-if="album.musicBrainzPreview.tracks.length" class="musicbrainz-tracklist">
                   <li
@@ -243,7 +283,18 @@ const emit = defineEmits<{
                     :key="`${track.disc}-${track.track}`"
                   >
                     <span>{{ track.disc }}-{{ track.track }}. {{ track.title }}</span>
-                    <small v-if="track.artist_name">{{ track.artist_name }}</small>
+                    <small
+                      >{{ track.artist_name || '未知艺人' }} ·
+                      {{
+                        track.musicbrainz_id
+                          ? `Recording ${track.musicbrainz_id}`
+                          : '无 Recording ID'
+                      }}{{
+                        track.length_ms != null
+                          ? ` · ${Math.floor(track.length_ms / 60000)}:${String(Math.floor(track.length_ms / 1000) % 60).padStart(2, '0')}`
+                          : ''
+                      }}{{ track.isrcs?.length ? ` · ISRC ${track.isrcs.join(', ')}` : '' }}</small
+                    >
                   </li>
                 </ol>
                 <p v-else class="hint">来源未提供曲目列表，现有曲目信息会保留。</p>
@@ -263,7 +314,7 @@ const emit = defineEmits<{
                     :disabled="batch.busy || album.musicBrainzCoverLoading"
                     @click="batch.importMusicBrainzCover(album)"
                   >
-                    {{ album.musicBrainzCoverLoading ? '正在导入封面…' : '导入并选中封面' }}
+                    {{ album.musicBrainzCoverLoading ? '正在导入封面…' : '明确确认后导入正面封面' }}
                   </button>
                 </div>
               </div>
@@ -294,6 +345,7 @@ const emit = defineEmits<{
             ><label
               >专辑艺人<input
                 v-model="album.artist_name"
+                @input="batch.clearAlbumCredits(album)"
                 :disabled="batch.busy"
                 maxlength="255"
                 placeholder="专辑主艺人；合辑可填写 Various Artists"
@@ -320,6 +372,8 @@ const emit = defineEmits<{
                     placeholder="如：首版、重制版、豪华版" /></label
                 ><label>发行地区<input v-model="album.release_country" maxlength="100" /></label
                 ><label>唱片编号<input v-model="album.catalog_number" maxlength="100" /></label
+                ><label>完整发行日期<input v-model="album.release_date" type="date" /></label
+                ><label>流派<input v-model="album.genre" maxlength="100" /></label
                 ><label>厂牌<input v-model="album.label" maxlength="255" /></label>
               </div>
               <div class="form-grid">
@@ -600,7 +654,7 @@ const emit = defineEmits<{
                 <label
                   >歌曲演唱者<input
                     :value="batch.songArtist(entry.row)"
-                    @input="entry.row.artist = ($event.target as HTMLInputElement).value"
+                    @input="updateSongArtist(entry.row, $event)"
                     :disabled="
                       batch.form.applyArtist ||
                       album.applyArtist ||

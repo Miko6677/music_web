@@ -14,6 +14,7 @@ import { useUploadTrackNumbers } from './useUploadTrackNumbers'
 import {
   type BatchAlbum,
   type BatchGrouping,
+  type MusicBrainzRelease,
   batchGroupKey,
   type BatchRow,
   createBatchAlbum,
@@ -119,6 +120,57 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
       total_tracks: album.total_tracks || null,
       ...assets(album),
     }
+  }
+  async function searchMusicBrainz(album: BatchAlbum) {
+    if (!album.name.trim()) return
+    album.musicBrainzSearching = true
+    album.musicBrainzError = ''
+    album.musicBrainzResults = []
+    try {
+      const response = await api
+        .get('musicbrainz/releases', {
+          searchParams: { q: album.name.trim(), artist: album.artist_name.trim() },
+        })
+        .json<{ items: MusicBrainzRelease[] }>()
+      album.musicBrainzResults = response.items
+      if (!response.items.length) album.musicBrainzError = 'MusicBrainz 没找到匹配专辑。'
+    } catch (error) {
+      album.musicBrainzError =
+        error instanceof Error ? error.message : 'MusicBrainz 查询失败，请稍后重试。'
+    } finally {
+      album.musicBrainzSearching = false
+    }
+  }
+  function useMusicBrainzResult(album: BatchAlbum, result: MusicBrainzRelease) {
+    album.name = result.name
+    album.artist_name = result.artists.join(' / ')
+    album.release_year = result.release_date
+      ? Number(result.release_date.slice(0, 4)) || null
+      : null
+    album.musicbrainz_id = result.id
+    album.release_country = result.country || album.release_country
+    album.label = result.label || album.label
+    album.catalog_number = result.catalog_number || album.catalog_number
+    album.total_discs = result.total_discs || album.total_discs
+    album.total_tracks = result.total_tracks || album.total_tracks
+  }
+  async function importMusicBrainzCover(album: BatchAlbum, result: MusicBrainzRelease) {
+    await run(async () => {
+      const response = await fetch(result.cover_url)
+      if (!response.ok) throw new Error('Cover Art Archive 没有这张专辑的封面。')
+      const blob = await response.blob()
+      if (!blob.type.startsWith('image/')) throw new Error('Cover Art Archive 返回的内容不是图片。')
+      const extension = blob.type.includes('png')
+        ? 'png'
+        : blob.type.includes('webp')
+          ? 'webp'
+          : 'jpg'
+      const file = new File([blob], `${result.id}-cover.${extension}`, { type: blob.type })
+      const uploaded = await uploads.cover(file)
+      useMusicBrainzResult(album, result)
+      pickPicture(album, uploaded)
+      notify('封面已下载并上传到 EmoS，可在封面与附图中确认。')
+    })
   }
   async function searchAlbums(album: BatchAlbum, initial = false) {
     if (!album.name.trim() && (!album.selection || ['new', 'none'].includes(album.selection))) {
@@ -636,6 +688,9 @@ export function useUploadBatch(onSaved: () => Promise<void>) {
     selectedAlbum,
     albumOptions,
     searchAlbums,
+    searchMusicBrainz,
+    useMusicBrainzResult,
+    importMusicBrainzCover,
     coverId,
     pictureId,
     assetsLoading,

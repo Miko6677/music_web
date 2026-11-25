@@ -5,6 +5,23 @@ import type { UploadTask } from './model'
 
 export type BatchGrouping = 'folder' | 'album'
 
+export interface MusicBrainzRelease {
+  id: string
+  name: string
+  release_date: string | null
+  release_type: string | null
+  status: string | null
+  country: string | null
+  format: string | null
+  label: string | null
+  catalog_number: string | null
+  total_discs: number | null
+  total_tracks: number | null
+  artists: string[]
+  source_url: string
+  cover_url: string
+}
+
 export interface BatchRow {
   taskId: string
   title: string
@@ -34,6 +51,9 @@ export interface BatchAlbum extends AlbumDraft {
   includeArtwork: boolean
   excludedPictureIds: string[]
   replaceCover: boolean
+  musicBrainzResults: MusicBrainzRelease[]
+  musicBrainzSearching: boolean
+  musicBrainzError: string
 }
 export interface BatchEntry {
   row: BatchRow
@@ -137,5 +157,8 @@ export function createBatchAlbum(tasks: UploadTask[] = []): BatchAlbum {
     loading: false,
     error: '',
     inferredArtist: !uniqueArtists.length,
+    musicBrainzResults: [],
+    musicBrainzSearching: false,
+    musicBrainzError: '',
   }
 }

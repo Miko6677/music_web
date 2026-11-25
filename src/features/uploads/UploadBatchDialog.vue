@@ -170,6 +170,58 @@ const emit = defineEmits<{
           </li>
         </ul>
         <div v-if="!album.selection || album.selection === 'new'" class="form-stack">
+          <div class="form-stack musicbrainz-import">
+            <button
+              :disabled="batch.busy || album.musicBrainzSearching || !album.name.trim()"
+              class="button small secondary"
+              type="button"
+              @click="batch.searchMusicBrainz(album)"
+            >
+              {{
+                album.musicBrainzSearching ? '正在查 MusicBrainz…' : '从 MusicBrainz 获取专辑资料'
+              }}
+            </button>
+            <p class="hint">
+              选中候选可自动填写专辑名、艺人、年份和 MBID；封面会单独下载并上传到 EmoS。
+            </p>
+            <p v-if="album.musicBrainzError" class="hint">{{ album.musicBrainzError }}</p>
+            <ul v-if="album.musicBrainzResults.length" class="musicbrainz-results">
+              <li v-for="result in album.musicBrainzResults" :key="result.id">
+                <div>
+                  <strong>{{ result.name }}</strong>
+                  <span
+                    >{{ result.artists.join(' / ') || '艺人未知' }} ·
+                    {{ result.release_date?.slice(0, 4) || '年份未知' }} ·
+                    {{
+                      [result.release_type, result.status, result.format, result.country]
+                        .filter(Boolean)
+                        .join(' / ') || '发行信息未知'
+                    }}</span
+                  >
+                  <a :href="result.source_url" rel="noopener noreferrer" target="_blank"
+                    >MusicBrainz 来源</a
+                  >
+                </div>
+                <div class="musicbrainz-actions">
+                  <button
+                    class="text-button"
+                    type="button"
+                    @click="batch.useMusicBrainzResult(album, result)"
+                  >
+                    使用资料
+                  </button>
+                  <button
+                    class="text-button"
+                    type="button"
+                    :disabled="batch.busy"
+                    @click="batch.importMusicBrainzCover(album, result)"
+                  >
+                    导入封面
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </div>
           <div class="form-grid">
             <label
               >专辑名称<input
@@ -760,6 +812,44 @@ const emit = defineEmits<{
   line-height: 1.7;
   list-style: disc;
 }
+.musicbrainz-import {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface, #fafafa);
+}
+.musicbrainz-results {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.musicbrainz-results li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--background, #fff);
+}
+.musicbrainz-results li > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.musicbrainz-results span,
+.musicbrainz-results a {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.musicbrainz-actions {
+  display: flex;
+  gap: 12px;
+}
 .batch-common {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -820,6 +910,44 @@ const emit = defineEmits<{
   min-height: 40px;
 }
 @media (max-width: 680px) {
+  .musicbrainz-import {
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface, #fafafa);
+  }
+  .musicbrainz-results {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .musicbrainz-results li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--background, #fff);
+  }
+  .musicbrainz-results li > div:first-child {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+  .musicbrainz-results span,
+  .musicbrainz-results a {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .musicbrainz-actions {
+    display: flex;
+    gap: 12px;
+  }
   .batch-common {
     grid-template-columns: 1fr;
   }
